@@ -1,535 +1,214 @@
 ---
-title: "Reproducible Research: Peer Assessment 1"
+title: "The Effect of Vitamin C on Tooth Growth in Guinea Pigs"
 author: Oleg Krivosheev
 output:
+  pdf_document: default
   html_document:
     keep_md: true
 ---
 
-Peer Assessment 1
-=================
+```{r global_options, include=FALSE}
+library(knitr)
+opts_chunk$set(fig.width=8, fig.height=3.2, warning=FALSE, message=FALSE)
+```
 
-This document fulfills the requirements for the peer assessment 1 assignment,
-for Coursera course [Reproducible Research](https://class.coursera.org/repdata-035).
+## Overview
 
-## Introduction
+We will analyze the effect of Vitamin C on Tooth Growth in Guinea Pigs (a.k.a cavies).
+Data are located in the **R** datasets package. We will use hypothesis testing
+to compare tooth growth by supplement and dose.
 
-We take the problem description verbatim from the original document.
-
-> It is now possible to collect a large amount of data about personal
-> movement using activity monitoring devices such as a
-> [Fitbit](http://www.fitbit.com), [Nike
-> Fuelband](http://www.nike.com/us/en_us/c/nikeplus-fuelband), or
-> [Jawbone Up](https://jawbone.com/up). These type of devices are part of
-> the "quantified self" movement -- a group of enthusiasts who take
-> measurements about themselves regularly to improve their health, to
-> find patterns in their behavior, or because they are tech geeks. But
-> these data remain under-utilized both because the raw data are hard to
-> obtain and there is a lack of statistical methods and software for
-> processing and interpreting the data.
->
-> This assignment makes use of data from a personal activity monitoring
-> device. This device collects data at 5 minute intervals through out the
-> day. The data consists of two months of data from an anonymous
-> individual collected during the months of October and November, 2012
-> and include the number of steps taken in 5 minute intervals each day.
-
-## Data
-
-Data archive is included into the repository. As an alternative, data could
-be downloaded from [Activity monitoring data](https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2Factivity.zip).
-
-Data description taken verbatim from the assignment.
-
-> The variables included in this dataset are:
->
-> * **steps**: Number of steps taking in a 5-minute interval (missing
->     values are coded as `NA`)
->
-> * **date**: The date on which the measurement was taken in YYYY-MM-DD
->     format
->
-> * **interval**: Identifier for the 5-minute interval in which
->     measurement was taken
->
->
-> The dataset is stored in a comma-separated-value (CSV) file and there
-> are a total of 17,568 observations in this
-> dataset.
-
-## Assignment
-
-There are multiple parts for this assignment. This document will answer all
-questions raised as part of an assignment. Document to be processed by **knitr**
-and output will be valid HTML file. **R** code in the document will be echoed
-so reviewer shall be able to read the code. Each section below will answer one
-or more questions raised in the assignment.
-
-## Loading required **R** packages
-
-First, we check if all necessary packages are installed. If not, they
-will be installed and loaded.
-
-```{r, echo=TRUE}
-check_and_install <- function( packname ) {
-    # given package name, check if it is installed
-    # if not, download and install
+```{r, echo=FALSE}
+check_and_install <- function( packname ) { # given package name, check installation, install if not found
     if ( packname %in% rownames(installed.packages()) == FALSE ) {
         install.packages( packname )
     }
 }
 
-check_and_install("data.table")
-check_and_install("xtable")
 check_and_install("ggplot2")
+check_and_install("data.table")
+check_and_install("R.utils")
 
-require("data.table")
-require("xtable")
-require("ggplot2")
+require(ggplot2)
+require(data.table) # superior in all ways to the data frame
+require(R.utils)
 ```
 
-## Loading and preprocessing the data
+## Data
 
-Data as a ZIP archive are located in the same directory as the **R** markdown. Thus,
-first we unpack archive and extract CSV file.
-Then, we read it and check for consistency. Last, we convert date string to
-*Date* and set primary key. Essential features of the [data.table](https://cran.r-project.org/web/packages/data.table/index.html)
-package will be used.
+The response is the length of odontoblasts (cells responsible for tooth growth) in 60 guinea pigs.
+Each animal received one of three dose levels of vitamin C (0.5, 1, and 2 mg/day) by one of two
+delivery methods, orange juice (OJ) or ascorbic acid (a form of vitamin C, coded as VC).
 
-### Unpacking and loading data
+```{r, echo=FALSE}
+library(datasets)
+data(ToothGrowth)
+```
 
 ```{r, echo=TRUE}
-unzip("activity.zip", "activity.csv")
-
-dt <- fread("activity.csv")
-str(dt)
-head(dt)
-tail(dt)
+tg <- as.data.table(ToothGrowth) # data loaded as data.table
 ```
 
-One can see we have three columns as *int*, *character* and *int*.
+## Exploratory Data Analysis
 
-### Check for consistency
-
-```{r, echo=TRUE}
-dims <- dim(dt)
-
-if (dims[1] != 17568) {
-    stop("Bad number of rows, should be 17568, bailing out!")
-}
-
-if (dims[2] != 3) {
-    stop("Bad number of columns, should be 3, bailing out!")
-}
+```{r, echo=FALSE}
+print(str(tg))
 ```
 
-If we make it so far, data are consistent with our expectations.
+We have 60 observables of the three variables in the data table.
 
-### Data preprocessing
-
-First, we prefer to convert second column to proper date.
-
-```{r, echo=TRUE}
-dt <- dt[ , date := as.Date(date, "%Y-%m-%d")]
+```{r, echo=FALSE}
+print(summary(tg))
 ```
 
-Second, we make *steps* column a numeric, for easy dealing with
-data imputing later.
+We have two numeric columns and one factor column (OJ/VC). Teeth length
+varies  wildly from 4.2 to 33.9 mm.
 
-```{r, echo=TRUE}
-dt <- dt[ , steps := as.numeric(steps)]
-
-str(dt)
-head(dt)
-tail(dt)
+From the we could check how man pigs were tested for each dose level and supplement.
+```{r, echo=FALSE}
+print(table(tg$supp, tg$dose))
 ```
 
-Last step is to set *date* as primary key for speedy evaluation
+We plot length versus dose, for a different supplement marked by color. We would state that
+both dosage and supplement affect teeth growth. How much we will explore in our Hypothesis testing
+section.
 
-```{r, echo=TRUE}
-setkey(dt, date)
-str(dt)
+```{r  len_vs_dose, echo=FALSE}
+g <- ggplot(tg, aes(x = dose, y = len, colour = supp))
+g <- g + geom_point() + xlab("Dose, mg/day") + ylab("Length, mm")
+# g <- g + ggtitle("Length vs Dose")
+print(g)
 ```
 
-## What is mean total number of steps taken per day?
+Next, we explore mean teeth length values grouped by supplement and dose, as well as std.deviation.
+Judging by the table, it is reasonable to guess that dose and supplement might be a significat effect
+given our confidence level.
 
-Here we will try to answer several question, taken verbatim from the assignment.
-
-> ### Calculate the total number of steps taken per day
-
-We will group data table by date, and then aggregate the number of steps.
-
-```{r, echo=TRUE}
-dt.steps_by_date <- dt[, sum(steps), by=date]
-setnames(dt.steps_by_date, "V1", "steps")
-
-str(dt.steps_by_date)
-head(dt.steps_by_date)
-tail(dt.steps_by_date)
+```{r, echo=FALSE}
+q <- tg[, .(mean(len), sd(len)), by=c("dose", "supp")]
+setnames(q, "V1", "mean_len")
+setnames(q, "V2", "std.dev")
+print(q)
 ```
+Plot of the data grouped by dose and supplement, please refer to Appendix B.
 
-> ### Make a histogram of the total number of steps taken each day
+## Hypothesis Testing
 
-To make a histogram, we will use **ggplot2** package functionality.
-We will make it a gradient plot to look a bit nicer. Also, we would
-like to see how bin width affects histrogram appearance.
+Our null hypothesis is that the mean tooth growth for
+the orange juice (OJ) group is equal to the mean tooth growth of the
+ascorbic acid (VC) group, for the same dosage of vitamin C.
 
-First, low resolution histogram with bin width equal to 1000.
+$H_0: \mu_{OJ} - \mu_{VC} == 0$
 
-```{r histo_nof_steps_each_day_low, fig.width=8, fig.height=6, echo=TRUE}
-p <- ggplot(dt.steps_by_date, aes(x = steps)) +
-       geom_histogram(alpha=0.3, binwidth=1000,
-                     col="red",
-                     aes(fill=..count..)) +
-       scale_fill_gradient("Count", low = "blue", high = "red") +
-       labs(title="Histogram of the total number of steps taken each day") +
-       labs(x="Total number of steps", y="Day count")
-print(p)
-```
+The alternative hypothesis is that they are not equal.
 
-Then, medium resolution histogram with bin width equal to 750.
+$H_a: \mu_{OJ} - \mu_{VC} > 0$
 
-```{r histo_nof_steps_each_day_med, fig.width=8, fig.height=6, echo=TRUE}
-p <- ggplot(dt.steps_by_date, aes(x = steps)) +
-       geom_histogram(alpha=0.3, binwidth=750,
-                     col="red",
-                     aes(fill=..count..)) +
-       scale_fill_gradient("Count", low = "blue", high = "red") +
-       labs(title="Histogram of the total number of steps taken each day") +
-       labs(x="Total number of steps", y="Day count")
-print(p)
-```
+Because we established that only 10 pigs are a subjects of each experiment,
+we will use t-test to find p-value and either accept or reject null-hypothesis.
 
-Last histogram is a fine one, with bin width equal to 500.
+We assume $\alpha=0.05$, which corresponds to a 95% confidence interval.
 
-```{r histo_nof_steps_each_day_high, fig.width=8, fig.height=6, echo=TRUE}
-p <- ggplot(dt.steps_by_date, aes(x = steps)) +
-       geom_histogram(alpha=0.3, binwidth=500,
-                     col="red",
-                     aes(fill=..count..)) +
-       scale_fill_gradient("Count", low = "blue", high = "red") +
-       labs(title="Histogram of the total number of steps taken each day") +
-       labs(x="Total number of steps", y="Day count")
-print(p)
-```
-
-> ### Calculate and report the mean and median of the total number of steps taken per day
-
-We will calculate the mean and median of the total number of steps taken per day.
-Because data still has *NA* values, we will filter them out.
-To make a nice table, we will be using [xtable](https://cran.r-project.org/web/packages/xtable/index.html)
-package.
-
-First, we make data table *tbl* filtering out *NA* values and computing mean and median.
-
-```{r, echo=TRUE}
-tbl <- dt.steps_by_date[, list(N = .N,  mean = mean(steps, na.rm=TRUE), median = median(steps, na.rm=TRUE))]
-str(tbl)
-```
-
-Then we print *tbl* as a nice embedded HTML table.
-
-```{r results="asis", echo=TRUE}
-print(xtable(tbl), type="html", include.rownames=FALSE)
-```
-
-## What is the average daily activity pattern?
-
-There are two questions to be answered in this chapter of the assignment.
-
-> ### Make a time series plot of the 5-minute interval (x-axis) and the average number of steps taken, averaged across all days (y-axis)
-
-First, we make new data table, grouped by interval with average number of steps taken.
-Of course, *NA* values will be filtered out.
-
-```{r, echo=TRUE}
-dt.steps_by_interval <- dt[, list(mean = mean(steps, na.rm=TRUE)), by=interval]
-str(dt.steps_by_interval)
-```
-
-Now making linear plot, again using **ggplot2** as plotting library.
-
-```{r ave_nof_steps_taken, echo=TRUE, fig.width=8, fig.height=6}
-p <- ggplot(dt.steps_by_interval, aes(x=interval, y=mean)) +
-	geom_line(size=1, colour="#CC6666") +
-    labs(title="Average number of steps per interval") +
-    labs(x="Interval", y="Average number of steps")
-print(p)
-```
-
-> ### Which 5-minute interval, on average across all the days in the dataset, contains the maximum number of steps?
-
-To find this value, first we sort our data table by average number of steps in
-the descending order, and thus first row will contain asked value in the
-*interval* column.
-
-```{r, echo=TRUE}
-q <- dt.steps_by_interval[order(-mean)]
-str(q)
-max_interval <- q[1, interval]
-```
-
-The 5-minute interval, on average across all the days in the dataset,
-with the largest number of steps is `r max_interval`.
-It is consistent with the displayed graph.
-
-## Imputing missing values
-
-There are a number of days/intervals where there are missing
-values (coded as `NA`). The presence of missing days may introduce
-bias into some calculations or summaries of the data.
-
-> ### Calculate and report the total number of missing values in the dataset
-
-We use **is.na()** function to get logical vector of missing values.
-Then we sum it to produce asked value.
-
-```{r, echo=TRUE}
-q <- is.na(dt$steps)
-mia_steps <- sum(q)
-```
-
-Thus, total number of missing values is equal to `r mia_steps`.
-
-Just in case, checking *NA* in the *date* and *interval* columns
-
-```{r, echo=TRUE}
-q <- is.na(dt$date)
-mia_date <- sum(q)
-```
-
-Number of missing dates is equal to `r mia_date`.
-
-```{r, echo=TRUE}
-q <- is.na(dt$interval)
-mia_interval <- sum(q)
-```
-
-Number of missing intervals is equal to `r mia_interval`.
-Thus, we believe there are no missing dates and intervals.
-
-> ### Devise a strategy for filling in all of the missing values in the dataset.
-
-We will use very simple strategy. For each missing value we will replace it with
-mean value for the same 5-minute interval computed over all data table.
-
-First, we make helper data table with only two columns, interval versus
-average number of steps per interval, with *NA* values removed.
-
-```{r, echo=TRUE}
-dt.med = dt[, list(mean=mean(steps, na.rm=TRUE)), by=interval]
-setkey(dt.med, interval)
-str(dt.med)
-```
-
-> ### Create a new dataset that is equal to the original dataset but with the missing data filled in.
-
-Make a copy of the original data table, which is going to be filled with imputed values.
-
-```{r, echo=TRUE}
-dt.imp <- copy(dt)
-str(dt.imp)
-tables()
-```
-
-Now we have two data tables in the memory (along the other working tables).
-
-We will search in a loop for *NA*, and as soon sa it is found,
-we get interval and select mean value of steps from the helper
-data table. Value will be rounded to represent ordinal number of steps.
-Rounding will keep data reasonable, but it will slightly affect mean, median
-and similar values. As an alternative, one might consider imputing unaltered
-mean values. It is possible because we converted *steps* into *numeric*.
-
-```{r, echo=TRUE}
-for (k in seq_len(nrow(dt.imp))) {
-    if (is.na(dt.imp$steps[k])) {
-        i <- dt.imp$interval[k]
-        q <- dt.med[interval == i]
-        dt.imp$steps[k] = round(q$mean)
+We split our data table into three ones by the dose value.
+```{r, echo=FALSE}
+split.data.table <- function(x, f, drop = FALSE, by, flatten = FALSE, ...){
+    if(missing(by) && !missing(f)) by = f
+    stopifnot(!missing(by), is.character(by), is.logical(drop), is.logical(flatten), !".ll" %in% names(x), by %in% names(x), !"nm" %in% by)
+    if(!flatten){
+        .by = by[1L]
+        tmp = x[, list(.ll=list(.SD)), by = .by, .SDcols = if(drop) setdiff(names(x), .by) else names(x)]
+        setattr(ll <- tmp$.ll, "names", tmp[[.by]])
+        if(length(by) > 1L) return(lapply(ll, split.data.table, drop = drop, by = by[-1L])) else return(ll)
+    } else {
+        tmp = x[, list(.ll=list(.SD)), by=by, .SDcols = if(drop) setdiff(names(x), by) else names(x)]
+        setattr(ll <- tmp$.ll, 'names', tmp[, .(nm = paste(.SD, collapse = ".")), by = by, .SDcols = by]$nm)
+        return(ll)
     }
 }
 
-#write.csv(dt.imp, file = "imputed.csv")
+t <- split.data.table(tg, by = "dose", drop= TRUE, flatten = TRUE)
 ```
 
-**NB:** Ought to find a better way for such operation.
+For a given dose value, we run t-test assuming that subjects are not paired and
+variances are NOT equal. Such test will produce wider confidence interval which
+facilitate the hypothesis testing.
 
-Now lets check new data table has no *NA* values.
-
-```{r, echo=TRUE}
-q <- is.na(dt.imp$steps)
-sum(q)
+### Dose Value 0.5 mg/day
+```{r, echo=FALSE}
+t_05 <- t.test(len ~ supp, paired = FALSE, var.equal = FALSE, data = t[[1]])
+p_05 <- round(t_05$p.value, 3)
+printf("p-value = %.3f", p_05)
+printf("95 percent confidence interval: %.3f %.3f", t_05$conf[1], t_05$conf[2])
 ```
+P-value is very small, only about `r p_05` which allow us safely reject null hypothesis
+using this most permissive test. Confidence interval is clearly above zero,
+which favors alternative hypothesis.
 
-Just in case, check original data table still contains *NA* values.
-
-```{r, echo=TRUE}
-q <- is.na(dt$steps)
-sum(q)
+### Dose Value 1.0 mg/day
+```{r, echo=FALSE}
+t_10 <- t.test(len ~ supp, paired = FALSE, var.equal = FALSE, data = t[[2]])
+p_10 <- round(t_10$p.value, 3)
+printf("p-value = %.3f", p_10)
+printf("95 percent confidence interval: %.3f %.3f", t_10$conf[1], t_10$conf[2])
 ```
+P-value is very small as well, about `r p_10`, which allow us reject null hypothesis.
+Confidence interval is clearly above zero, which favors alternative hypothesis.
 
-> ### Make a histogram of the total number of steps taken each day and Calculate and report the **mean** and **median** total number of steps taken per day. Do these values differ from the estimates from the first part of the assignment?
-
-We will use new data table to compute the total number of steps taken each day.
-
-```{r, echo=TRUE}
-dt.imp.steps_by_date <- dt.imp[, sum(steps), by=date]
-setnames(dt.imp.steps_by_date, "V1", "steps")
-
-str(dt.imp.steps_by_date)
-head(dt.imp.steps_by_date)
-tail(dt.imp.steps_by_date)
+### Dose Value 2.0 mg/day
+```{r, echo=FALSE}
+t_20 <- t.test(len ~ supp, paired = FALSE, var.equal = FALSE, data = t[[3]])
+p_20 <- round(t_20$p.value, 3)
+printf("p-value = %.3f", p_20)
+printf("95 percent confidence interval: %.3f %.3f", t_20$conf[1], t_20$conf[2])
 ```
+Here p-value is very large, equal to `r p_20`, confidence interval is large as well,
+almost symmetric and clearly contains 0. Here we fail to reject null hypothesis.
 
-Plotting new histogram, first low resolution
-
-```{r histo_nof_steps_each_day_imp_low, fig.width=8, fig.height=6, echo=TRUE}
-p <- ggplot(dt.imp.steps_by_date, aes(x = steps)) +
-       geom_histogram(alpha=0.3, binwidth=1000,
-                     col="red",
-                     aes(fill=..count..)) +
-       scale_fill_gradient("Count", low = "blue", high = "red") +
-       labs(title="Imputed histogram of the total number of steps taken each day") +
-       labs(x="Total number of steps", y="Day count")
-print(p)
+Lets try for dose 2.0 mg/day t-test assuming that data are paired and variance is equal.
+Sort data first and then apply t-test with paired equal to true, and var.equal set to true as well.
+That procedure will produce smallest p-value and smallest confidence interval, which might allow us
+to reject null hypothesis.
+```{r, echo=FALSE}
+d <- t[[3]]
+d <- d[with(d, order(supp, len)), ]
+t_20p <- t.test(len ~ supp, paired = TRUE, var.equal = TRUE, data = d)
+p_20p <- round(t_20p$p.value, 3)
+printf("p-value = %.3f", p_20p)
+printf("95 percent confidence interval: %.3f %.3f", t_20p$conf[1], t_20p$conf[2])
 ```
-
-then medium
-
-```{r histo_nof_steps_each_day_imp_med, fig.width=8, fig.height=6, echo=TRUE}
-p <- ggplot(dt.imp.steps_by_date, aes(x = steps)) +
-       geom_histogram(alpha=0.3, binwidth=750,
-                     col="red",
-                     aes(fill=..count..)) +
-       scale_fill_gradient("Count", low = "blue", high = "red") +
-       labs(title="Imputed histogram of the total number of steps taken each day") +
-       labs(x="Total number of steps", y="Day count")
-print(p)
-```
-
-and, finally, high resolution graph.
-
-```{r histo_nof_steps_each_day_imp_high, fig.width=8, fig.height=6, echo=TRUE}
-p <- ggplot(dt.imp.steps_by_date, aes(x = steps)) +
-       geom_histogram(alpha=0.3, binwidth=500,
-                     col="red",
-                     aes(fill=..count..)) +
-       scale_fill_gradient("Count", low = "blue", high = "red") +
-       labs(title="Imputed histogram of the total number of steps taken each day") +
-       labs(x="Total number of steps", y="Day count")
-print(p)
-```
-
-As before, we make table of mean and median.
-
-```{r, echo=TRUE}
-tbl.imp <- dt.imp.steps_by_date[, list(N = .N,  mean = mean(steps, na.rm=TRUE), median = median(steps, na.rm=TRUE))]
-str(tbl.imp)
-```
-
-Then we print *tbl.imp* as a nice embedded HTML table.
-
-```{r results="asis", echo=TRUE}
-print(xtable(tbl.imp), type="html", include.rownames=FALSE)
-```
-
-Now, we combine old and new table to present them together
-
-```{r, echo=TRUE}
-tbl.sum <- rbind(tbl, tbl.imp)
-row.names(tbl.sum) <- c("Original", "Imputed")
-```
-
-and print it
-
-```{r results="asis", echo=TRUE}
-print(xtable(tbl.sum), type="html", include.rownames=TRUE)
-```
-
-Apparently, they are different from non-imputed data, but only slightly.
-
-> ### What is the impact of imputing missing data on the estimates of the total daily number of steps?
-
-The impact of our strategy is very slight change in the mean and median
-value of the imputed data table vs original one. The reason for difference being very small
-is quite simple - selected strategy by replacing missing values with mean pretty
-much guarantees that mean and median would be very close to the original one.
-
-From the other hand, from histograms one can see there is now a lot more days having
-particular number of steps taken, so *count* is going up.
-This was an expected development, because now there are a lot more days to
-contribute to the particular histogram bins.
-
-## Are there differences in activity patterns between weekdays and weekends?
-
-We will use imputed data table for computations and graphs to answer stated question.
-
-> ### Create a new factor variable in the dataset with two levels -- "weekday" and "weekend" indicating whether a given date is a weekday or weekend day.
-
-First, we make character vector with our two factors which match accepted
-weekend/weekday numbering scheme (week start with Sunday and ends on Saturday).
-
-```{r, echo=TRUE}
-thedays <- c("weekend", rep("weekday",5), "weekend")
-print(thedays)
-```
-
-Then we add another column to the imputed data table with factors as
-observable. For that, we use *date*, coerse it into POSIXlt type,
-take *wday* from ut which would be numeric ranging from 0 to 6.
-We add one to have range from 1 to 7, use it as an index to the
-*thedays* array and finally treat it all as a factor. Ugh!
-
-But it fits into one line...
-
-```{r, echo=TRUE}
-dt.imp[, wd := as.factor(thedays[as.POSIXlt(dt.imp$date)$wday + 1])]
-str(dt.imp)
-```
-
-One can see we have now two-level factor as a forth column. To check
-if first date is really a weekday, we could visit [2012-10-01](http://www.dayoftheweek.org/?m=October&d=1&y=2012&go=Go#axzz3utuUEy1w)
-on this page, and indeed that day was Monday.
-
-Count number of weekdays and weekends in data table.
-
-```{r, echo=TRUE}
-q <- dt.imp$wd == "weekday"
-weekdays <- sum(q)
-q <- dt.imp$wd == "weekend"
-weekends <- sum(q)
-totaldays <- weekends+weekdays
-```
-
-So we have `r weekdays` weekdays and `r weekends` weekends in our data table
-for a total of `r totaldays` (which, in turn, is equal to the number of observations
-in the data table).
-
-> ### Make a panel plot containing a time series plot of the 5-minute interval (x-axis) and the average number of steps taken, averaged across all weekday days or weekend days (y-axis).
-
-Aggregate the average number of steps taken by 5-minute interval.
-Use the imputed values in the `steps` variable.
-
-```{r}
-dt.imp.meansteps <- dt.imp[, list(mean = mean(steps, na.rm=TRUE)), by = list(wd, interval)]
-```
-
-Plot two time series (one for weekdays and the other for weekends) of the 5-minute intervals and average number of steps taken (using imputed values).
-We again use **ggplot2*, with facets, to make multy-graph plot.
-
-```{r time_series_average_steps_by_interval_wd_imp, echo=TRUE }
-p <- ggplot(dt.imp.meansteps, aes(x=interval, y=mean, color=wd)) +
-	 facet_wrap(~wd, nrow=2) +
-	 geom_line(size = 1) +
-     labs(title="Time series of the mean number of steps taken per interval and day type") +
-     labs(x="Interval", y="Mean number of steps") +
-	 theme(legend.position="none")
-print(p)
-```
-
-As on can see, during weekend people tend to walk less, but in more uniform pattern.
+As one can see, confidence interval gets a lot smaller than in previous test, and p-value of `r p_20p`
+is smaller as well.  Nveretheless, it is still very clear, that we cannot reject null hypothesis.
 
 ## Conclusion
 
-That's it, folks.
+From the data and testin we conclude that for dosage of 0.5 mg/day and 1.0 mg/day we reject
+the null hypothesis H0 and adopt the alternative hypothesis: $\mu_{OJ} > \mu_{VC}$.
+For dose 2.0 mg/day, we were unable, based on data, to reject the null hypothesis.
+
+We could conclude that to get the pigs with large teeth, one have to feed them 
+orange juice, full of sun and Vitamin C. At the dose of 2mg/day one could replace
+orange juice with supposedly cheaper ascorbic acid supplement.
+
+### N.B.
+
+We observe that guinea pig teeth could grow up to 33.9mm. That would be one charming and dangerous pig!
+
+$\pagebreak$
+
+## Appendix A
+
+Markdown code is available from the **GitHub** repository at *https://github.com/Oleg-Krivosheev/Statistical-Inference-Course-Project/two.Rmd*
+
+Split **data.table** to frames by columns is taken from *https://github.com/Rdatatable/data.table/issues/1389*
+
+## Appendix B
+
+Plot of the data grouped by dose and supplement
+
+```{r len_vs_supp, echo=FALSE}
+g <- ggplot(tg, aes(x = supp, y = len, colour = supp))
+g <- g + geom_boxplot(aes(fill = supp), alpha = 0.5)
+g <- g + facet_grid(. ~ dose)
+g <- g + xlab("Supplement") + ylab("Length, mm")
+print(g)
+```

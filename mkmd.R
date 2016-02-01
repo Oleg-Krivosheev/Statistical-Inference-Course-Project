@@ -1,5 +1,5 @@
 library(knitr)
 
-knit2html("one.Rmd")
+knit2html("two.Rmd")
 
-browseURL("one.html")
+browseURL("two.html")
