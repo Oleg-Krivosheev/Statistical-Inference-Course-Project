@@ -9,10 +9,7 @@ output:
 
 # The Effect of Vitamin C on Tooth Growth in Guinea Pigs
 
-```{r global_options, include=FALSE}
-library(knitr)
-opts_chunk$set(fig.width=8, fig.height=3.2, warning=FALSE, message=FALSE)
-```
+
 
 ## Overview
 
@@ -20,21 +17,7 @@ We will analyze the effect of Vitamin C on Tooth Growth in Guinea Pigs (a.k.a ca
 Data are located in the **R** datasets package. We will use hypothesis testing
 to compare tooth growth by supplement and dose.
 
-```{r, echo=FALSE}
-check_and_install <- function( packname ) { # given package name, check installation, install if not found
-    if ( packname %in% rownames(installed.packages()) == FALSE ) {
-        install.packages( packname )
-    }
-}
 
-check_and_install("ggplot2")
-check_and_install("data.table")
-check_and_install("R.utils")
-
-require(ggplot2)
-require(data.table) # superior in all ways to the data frame
-require(R.utils)
-```
 
 ## Data
 
@@ -42,55 +25,69 @@ The response is the length of odontoblasts (cells responsible for tooth growth) 
 Each animal received one of three dose levels of vitamin C (0.5, 1, and 2 mg/day) by one of two
 delivery methods, orange juice (OJ) or ascorbic acid (a form of vitamin C, coded as VC).
 
-```{r, echo=FALSE}
-library(datasets)
-data(ToothGrowth)
-```
 
-```{r, echo=TRUE}
+
+
+```r
 tg <- as.data.table(ToothGrowth) # data loaded as data.table
 ```
 
 ## Exploratory Data Analysis
 
-```{r, echo=FALSE}
-print(str(tg))
+
+```
+## Classes 'data.table' and 'data.frame':	60 obs. of  3 variables:
+##  $ len : num  4.2 11.5 7.3 5.8 6.4 10 11.2 11.2 5.2 7 ...
+##  $ supp: Factor w/ 2 levels "OJ","VC": 2 2 2 2 2 2 2 2 2 2 ...
+##  $ dose: num  0.5 0.5 0.5 0.5 0.5 0.5 0.5 0.5 0.5 0.5 ...
+##  - attr(*, ".internal.selfref")=<externalptr> 
+## NULL
 ```
 
 We have 60 observables of the three variables in the data table.
 
-```{r, echo=FALSE}
-print(summary(tg))
+
+```
+##       len        supp         dose      
+##  Min.   : 4.20   OJ:30   Min.   :0.500  
+##  1st Qu.:13.07   VC:30   1st Qu.:0.500  
+##  Median :19.25           Median :1.000  
+##  Mean   :18.81           Mean   :1.167  
+##  3rd Qu.:25.27           3rd Qu.:2.000  
+##  Max.   :33.90           Max.   :2.000
 ```
 
 We have two numeric columns and one factor column (OJ/VC). Teeth length
 varies  wildly from 4.2 to 33.9 mm.
 
 From the we could check how man pigs were tested for each dose level and supplement.
-```{r, echo=FALSE}
-print(table(tg$supp, tg$dose))
+
+```
+##     
+##      0.5  1  2
+##   OJ  10 10 10
+##   VC  10 10 10
 ```
 
 We plot length versus dose, for a different supplement marked by color. We would state that
 both dosage and supplement affect teeth growth. How much we will explore in our Hypothesis testing
 section.
 
-```{r  len_vs_dose, echo=FALSE}
-g <- ggplot(tg, aes(x = dose, y = len, colour = supp))
-g <- g + geom_point() + xlab("Dose, mg/day") + ylab("Length, mm")
-# g <- g + ggtitle("Length vs Dose")
-print(g)
-```
+![plot of chunk len_vs_dose](figure/len_vs_dose-1.png) 
 
 Next, we explore mean teeth length values grouped by supplement and dose, as well as std.deviation.
 Judging by the table, it is reasonable to guess that dose and supplement might be a significat effect
 given our confidence level.
 
-```{r, echo=FALSE}
-q <- tg[, .(mean(len), sd(len)), by=c("dose", "supp")]
-setnames(q, "V1", "mean_len")
-setnames(q, "V2", "std.dev")
-print(q)
+
+```
+##    dose supp mean_len  std.dev
+## 1:  0.5   VC     7.98 2.746634
+## 2:  1.0   VC    16.77 2.515309
+## 3:  2.0   VC    26.14 4.797731
+## 4:  0.5   OJ    13.23 4.459709
+## 5:  1.0   OJ    22.70 3.910953
+## 6:  2.0   OJ    26.06 2.655058
 ```
 Plot of the data grouped by dose and supplement, please refer to Appendix B.
 
@@ -112,73 +109,62 @@ we will use t-test to find p-value and either accept or reject null-hypothesis.
 We assume $\alpha=0.05$, which corresponds to a 95% confidence interval.
 
 We split our data table into three ones by the dose value.
-```{r, echo=FALSE}
-split.data.table <- function(x, f, drop = FALSE, by, flatten = FALSE, ...){
-    if(missing(by) && !missing(f)) by = f
-    stopifnot(!missing(by), is.character(by), is.logical(drop), is.logical(flatten), !".ll" %in% names(x), by %in% names(x), !"nm" %in% by)
-    if(!flatten){
-        .by = by[1L]
-        tmp = x[, list(.ll=list(.SD)), by = .by, .SDcols = if(drop) setdiff(names(x), .by) else names(x)]
-        setattr(ll <- tmp$.ll, "names", tmp[[.by]])
-        if(length(by) > 1L) return(lapply(ll, split.data.table, drop = drop, by = by[-1L])) else return(ll)
-    } else {
-        tmp = x[, list(.ll=list(.SD)), by=by, .SDcols = if(drop) setdiff(names(x), by) else names(x)]
-        setattr(ll <- tmp$.ll, 'names', tmp[, .(nm = paste(.SD, collapse = ".")), by = by, .SDcols = by]$nm)
-        return(ll)
-    }
-}
 
-t <- split.data.table(tg, by = "dose", drop= TRUE, flatten = TRUE)
-```
 
 For a given dose value, we run t-test assuming that subjects are not paired and
 variances are NOT equal. Such test will produce wider confidence interval which
 facilitate the hypothesis testing.
 
 ### Dose Value 0.5 mg/day
-```{r, echo=FALSE}
-t_05 <- t.test(len ~ supp, paired = FALSE, var.equal = FALSE, data = t[[1]])
-p_05 <- round(t_05$p.value, 3)
-printf("p-value = %.3f", p_05)
-printf("95 percent confidence interval: %.3f %.3f", t_05$conf[1], t_05$conf[2])
+
 ```
-P-value is very small, only about `r p_05` which allow us safely reject null hypothesis
+## p-value = 0.006
+```
+
+```
+## 95 percent confidence interval: 1.719 8.781
+```
+P-value is very small, only about 0.006 which allow us safely reject null hypothesis
 using this most permissive test. Confidence interval is clearly above zero,
 which favors alternative hypothesis.
 
 ### Dose Value 1.0 mg/day
-```{r, echo=FALSE}
-t_10 <- t.test(len ~ supp, paired = FALSE, var.equal = FALSE, data = t[[2]])
-p_10 <- round(t_10$p.value, 3)
-printf("p-value = %.3f", p_10)
-printf("95 percent confidence interval: %.3f %.3f", t_10$conf[1], t_10$conf[2])
+
 ```
-P-value is very small as well, about `r p_10`, which allow us reject null hypothesis.
+## p-value = 0.001
+```
+
+```
+## 95 percent confidence interval: 2.802 9.058
+```
+P-value is very small as well, about 0.001, which allow us reject null hypothesis.
 Confidence interval is clearly above zero, which favors alternative hypothesis.
 
 ### Dose Value 2.0 mg/day
-```{r, echo=FALSE}
-t_20 <- t.test(len ~ supp, paired = FALSE, var.equal = FALSE, data = t[[3]])
-p_20 <- round(t_20$p.value, 3)
-printf("p-value = %.3f", p_20)
-printf("95 percent confidence interval: %.3f %.3f", t_20$conf[1], t_20$conf[2])
+
 ```
-Here p-value is very large, equal to `r p_20`, confidence interval is large as well,
+## p-value = 0.964
+```
+
+```
+## 95 percent confidence interval: -3.798 3.638
+```
+Here p-value is very large, equal to 0.964, confidence interval is large as well,
 almost symmetric and clearly contains 0. Here we fail to reject null hypothesis.
 
 Lets try for dose 2.0 mg/day t-test assuming that data are paired and variance is equal.
 Sort data first and then apply t-test with paired equal to true, and var.equal set to true as well.
 That procedure will produce smallest p-value and smallest confidence interval, which might allow us
 to reject null hypothesis.
-```{r, echo=FALSE}
-d <- t[[3]]
-d <- d[with(d, order(supp, len)), ]
-t_20p <- t.test(len ~ supp, paired = TRUE, var.equal = TRUE, data = d)
-p_20p <- round(t_20p$p.value, 3)
-printf("p-value = %.3f", p_20p)
-printf("95 percent confidence interval: %.3f %.3f", t_20p$conf[1], t_20p$conf[2])
+
 ```
-As one can see, confidence interval gets a lot smaller than in previous test, and p-value of `r p_20p`
+## p-value = 0.911
+```
+
+```
+## 95 percent confidence interval: -1.658 1.498
+```
+As one can see, confidence interval gets a lot smaller than in previous test, and p-value of 0.911
 is smaller as well.  Nveretheless, it is still very clear, that we cannot reject null hypothesis.
 
 ## Conclusion
@@ -207,10 +193,4 @@ Split **data.table** to frames by columns is taken from *https://github.com/Rdat
 
 Plot of the data grouped by dose and supplement
 
-```{r len_vs_supp, echo=FALSE}
-g <- ggplot(tg, aes(x = supp, y = len, colour = supp))
-g <- g + geom_boxplot(aes(fill = supp), alpha = 0.5)
-g <- g + facet_grid(. ~ dose)
-g <- g + xlab("Supplement") + ylab("Length, mm")
-print(g)
-```
+![plot of chunk len_vs_supp](figure/len_vs_supp-1.png) 
